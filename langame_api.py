@@ -53,7 +53,6 @@ class LangameApi:
                 tmp = f.readline()
         self.table = np.zeros((len(self.pc_list), time_units), dtype=bool)
         self.time_units = time_units
-        #self.set_reservation_table()
 
     def get_reservation_table(self, pc_list: list[str], date_time: datetime, short_period: bool):#?date=19.02.2024+04%3A22
         self.driver.get("https://20.langame.ru/reservation/?date=" + datetime.strftime(date_time, '%d.%m.%Y')\

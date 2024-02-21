@@ -1,17 +1,11 @@
 import datetime
 import time
-
-from vkbottle import GroupEventType, GroupTypes, Keyboard, Text, VKAPIError
-from vkbottle import BaseStateGroup, bot
-from typing import Optional
-from vkbottle import Keyboard, KeyboardButtonColor, Text
+from vkbottle import BaseStateGroup
+from vkbottle import bot
+from vkbottle import Keyboard
+from vkbottle import KeyboardButtonColor
+from vkbottle import Text
 import vkbottle
-from typing import Union
-from vkbottle.bot import Message
-from vkbottle.dispatch.rules import ABCRule
-
-import numpy as np
-import re
 
 
 class VkBot:
@@ -56,9 +50,26 @@ class VkBot:
             self.pcs_buttons += self.room_dict[i]
 
     def loop(self):
+        # 11
+        @self.bot.on.message(text='Назад в меню')
+        async def menu_handler(message: bot.Message):
+            await self.bot.state_dispenser.set(message.peer_id, self.AllStates.main_state)
+            keyboard = (
+                Keyboard(one_time=True, inline=False)
+                .add(Text("Начать бронирование"), color=KeyboardButtonColor.POSITIVE)
+                .row()
+                .add(Text("Помощь"), color=KeyboardButtonColor.POSITIVE)
+            ).get_json()
+
+            await message.answer(
+                message="--текст мейн--",
+                keyboard=keyboard
+            )
+            return
+
         # 1
         @self.bot.on.message(text=["Помощь"], state=self.AllStates.main_state)
-        async def help_handler(message: Message):
+        async def help_handler(message: bot.Message):
             await self.bot.state_dispenser.set(message.peer_id, self.AllStates.help_state)
             keyboard = (
                 Keyboard(one_time=True, inline=False)
@@ -73,7 +84,7 @@ class VkBot:
 
         # 2
         @self.bot.on.message(text=["Начать бронирование"], state=self.AllStates.main_state)
-        async def day_handler(message: Message):
+        async def day_handler(message: bot.Message):
             if not (message.from_id.real in self.user_data.keys()):
                 self.user_data[message.from_id.real] = {\
                     "day": datetime.datetime.now(),
@@ -104,7 +115,7 @@ class VkBot:
 
         # 3
         @self.bot.on.message(text=["Другой день"], state=self.AllStates.day_state)
-        async def day_spec_handler(message: Message):
+        async def day_spec_handler(message: bot.Message):
             await self.bot.state_dispenser.set(message.peer_id, self.AllStates.day_spec_state)
             keyboard = (
                 Keyboard(one_time=True, inline=False)
@@ -119,10 +130,11 @@ class VkBot:
 
         # 4, 6
         @self.bot.on.message(state=self.AllStates.day_spec_state)
-        async def time0_handler(message: Message):
+        async def time0_handler(message: bot.Message):
             chosen_day_str = message.text
             try:
                 self.user_data[message.from_id.real]['day'] = datetime.datetime.strptime(chosen_day_str, '%d %m')
+                self.user_data[message.from_id.real]['day'] = self.user_data[message.from_id.real]['day'].replace(year=datetime.datetime.now().year.real)
             except(ValueError):
                 keyboard = (
                     Keyboard(one_time=True, inline=False)
@@ -148,9 +160,9 @@ class VkBot:
 
         # 5
         @self.bot.on.message(regexp=self.days_buttons, state=self.AllStates.day_state)
-        async def time1_handler(message: Message):
-            self.user_data[message.from_id.real]['day'] = datetime.datetime.strptime((message.text[-5:] + '.' + \
-                datetime.datetime.strftime(datetime.datetime.now(), '%Y')), "%d.%m.%Y")
+        async def time1_handler(message: bot.Message):
+            self.user_data[message.from_id.real]['day'] = datetime.datetime.strptime((message.text[-5:]), "%d.%m")
+            self.user_data[message.from_id.real]['day'] = self.user_data[message.from_id.real]['day'].replace(year=datetime.datetime.now().year.real)
 
             await self.bot.state_dispenser.set(message.peer_id, self.AllStates.time_state)
             keyboard = (
@@ -166,11 +178,13 @@ class VkBot:
 
         # 7-8
         @self.bot.on.message(state=self.AllStates.time_state)
-        async def room_handler(message: Message):
+        async def room_handler(message: bot.Message):
             chosen_time_str = message.text
             this_user_id = message.from_id.real
             try:
-                self.user_data[this_user_id]['time'] = datetime.datetime.strptime(chosen_time_str, '%H %M')
+                self.user_data[this_user_id]['day'] = self.user_data[this_user_id]['day'].replace(
+                    hour=datetime.datetime.strptime(chosen_time_str, '%H %M').hour.real,
+                    minute=(datetime.datetime.strptime(chosen_time_str, '%H %M').minute.real - (datetime.datetime.strptime(chosen_time_str, '%H %M').minute.real % 30)))
             except(ValueError):
                 keyboard = (
                     Keyboard(one_time=True, inline=False)
@@ -200,8 +214,8 @@ class VkBot:
                 year=self.user_data[this_user_id]['day'].year,
                 month=self.user_data[this_user_id]['day'].month,
                 day=self.user_data[this_user_id]['day'].day,
-                hour=self.user_data[this_user_id]['time'].hour,
-                minute=self.user_data[this_user_id]['time'].minute
+                hour=self.user_data[this_user_id]['day'].hour,
+                minute=self.user_data[this_user_id]['day'].minute
             ), True)
             for i in self.room_dict.keys():
                 cnt = 0
@@ -222,7 +236,7 @@ class VkBot:
 
         # 9
         @self.bot.on.message(regexp=self.room_dict.keys(), state=self.AllStates.room_state)
-        async def pc_handler(message: Message):
+        async def pc_handler(message: bot.Message):
             this_user_id = message.from_id.real
             self.user_data[this_user_id]['room'] = message.text
 
@@ -230,8 +244,8 @@ class VkBot:
                 year=self.user_data[this_user_id]['day'].year,
                 month=self.user_data[this_user_id]['day'].month,
                 day=self.user_data[this_user_id]['day'].day,
-                hour=self.user_data[this_user_id]['time'].hour,
-                minute=self.user_data[this_user_id]['time'].minute)
+                hour=self.user_data[this_user_id]['day'].hour,
+                minute=self.user_data[this_user_id]['day'].minute)
             pc_list = {}
             for i in self.room_dict[self.user_data[this_user_id]['room']]:
                 pc_list[i] = tmp_time
@@ -241,8 +255,8 @@ class VkBot:
                     del pc_list[i]
                     continue
                 for j in range(len(table[i])):
+                    pc_list[i] = tmp_time + (j * datetime.timedelta(minutes=30))
                     if table[i][j]:
-                        pc_list[i] = tmp_time + (j * datetime.timedelta(minutes=30))
                         break
 
             await self.bot.state_dispenser.set(message.peer_id, self.AllStates.pc_state)
@@ -269,10 +283,13 @@ class VkBot:
 
         # 10
         @self.bot.on.message(regexp=self.pcs_buttons, state=self.AllStates.pc_state)
-        async def book_handler(message: Message):
+        async def book_handler(message: bot.Message):
             this_user_id = message.from_id.real
 
-            if len(self.user_data[this_user_id]['pc']) == 100:
+            if self.user_data[this_user_id]['time'] < datetime.datetime.now():
+                self.user_data[this_user_id]['pc'].clear()
+
+            if len(self.user_data[this_user_id]['pc']) == 3:
                 await self.bot.state_dispenser.set(message.peer_id, self.AllStates.main_state)
                 keyboard = (
                     Keyboard(one_time=True, inline=False)
@@ -287,13 +304,8 @@ class VkBot:
                 )
                 return
 
-            tmp_time = datetime.datetime(
-                year=self.user_data[this_user_id]['day'].year,
-                month=self.user_data[this_user_id]['day'].month,
-                day=self.user_data[this_user_id]['day'].day,
-                hour=self.user_data[this_user_id]['time'].hour,
-                minute=self.user_data[this_user_id]['time'].minute)
-            self.api.set_reservation(tmp_time, message.text, (await self.bot.api.users.get(message.from_id))[0].first_name)
+            self.api.set_reservation(self.user_data[this_user_id]['day'], message.text, (await self.bot.api.users.get(message.from_id))[0].first_name)
+            self.user_data[this_user_id]['time'] = self.user_data[this_user_id]['day']
             self.user_data[this_user_id]['pc'].append(message.text)
             await self.bot.state_dispenser.set(message.peer_id, self.AllStates.main_state)
             keyboard = (
@@ -309,26 +321,9 @@ class VkBot:
             )
             return
 
-        # 11
-        @self.bot.on.message(text='Назад в меню')
-        async def menu_handler(message: Message):
-            await self.bot.state_dispenser.set(message.peer_id, self.AllStates.main_state)
-            keyboard = (
-                Keyboard(one_time=True, inline=False)
-                .add(Text("Начать бронирование"), color=KeyboardButtonColor.POSITIVE)
-                .row()
-                .add(Text("Помощь"), color=KeyboardButtonColor.POSITIVE)
-            ).get_json()
-
-            await message.answer(
-                message="--текст мейн--",
-                keyboard=keyboard
-            )
-            return
-
         # !
         @self.bot.on.message()
-        async def all_handler(message: Message):
+        async def all_handler(message: bot.Message):
             await self.bot.state_dispenser.set(message.peer_id, self.AllStates.main_state)
             keyboard = (
                 Keyboard(one_time=True, inline=False)
